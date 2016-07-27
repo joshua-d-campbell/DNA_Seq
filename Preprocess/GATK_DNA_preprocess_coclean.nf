@@ -88,7 +88,7 @@ process runFastqToSam {
     publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/FastqToSam/"
     
     input:
-    set indivID, sampleID, libraryID, rgID, platform_unit, platform, run_date, center, fastqR1, fastqR2 from readPairsFastqToSam
+    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center, fastqR1, fastqR2 from readPairsFastqToSam
     
     output:
     set indivID, sampleID, libraryID, rgID, file(outfile) into runFastqToSamOutput
@@ -108,11 +108,10 @@ process runFastqToSam {
 		LIBRARY_NAME=${libraryID} \
 		PLATFORM_UNIT=${platform_unit} \
 		PLATFORM=${platform} \
+		PLATFORM_MODEL=${platform_model} \		
 		SEQUENCING_CENTER=${center} \
 		RUN_DATE=${run_date}	
     """
-    
-
 }
 
 process runMarkIlluminaAdapters {
@@ -252,7 +251,7 @@ process runMarkDuplicates {
 
 //#############################################################################################################
 //
-// Combined samples from the same Individual (e.g. tumor/normal pair) to send to runRealignerTargetCreator
+// Combine samples from the same Individual (e.g. tumor/normal pair) to send to runRealignerTargetCreator
 //
 //#############################################################################################################
 
