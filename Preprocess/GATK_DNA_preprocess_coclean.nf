@@ -49,7 +49,7 @@ DBSNP = file(params.dbsnp)
 
 
 // Necessary columns needed in input file:
-// INDIVIDUAl_ID	SAMPLE_ID	LIBRARY_ID	RG_ID	PLATFORM_UNIT	PLATFORM	RUN_DATE	CENTER	R1	R2
+// INDIVIDUAl_ID	SAMPLE_ID	LIBRARY_ID	RG_ID	PLATFORM_UNIT	PLATFORM	PLATFORM_MODEL	RUN_DATE	CENTER	R1	R2
 
 //#############################################################################################################
 //
@@ -84,7 +84,7 @@ for( line in inputFile.readLines() ) {
 process runFastqToSam {
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=5g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=5G"
     publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/FastqToSam/"
     
     input:
@@ -99,7 +99,7 @@ process runFastqToSam {
     """
     module load java/1.8.0_66
     
-	java -Xmx5G -jar ${PICARD} FastqToSam \
+	java -Xmx5G -XX:ParallelGCThreads=1 -jar ${PICARD} FastqToSam \
 		FASTQ=${fastqR1} \
 		FASTQ2=${fastqR2} \
 		OUTPUT=${outfile} \
@@ -108,16 +108,17 @@ process runFastqToSam {
 		LIBRARY_NAME=${libraryID} \
 		PLATFORM_UNIT=${platform_unit} \
 		PLATFORM=${platform} \
-		PLATFORM_MODEL=${platform_model} \		
+		PLATFORM_MODEL=${platform_model} \
 		SEQUENCING_CENTER=${center} \
-		RUN_DATE=${run_date}	
+		RUN_DATE=${run_date} \
+		TMP_DIR=tmp
     """
 }
 
 process runMarkIlluminaAdapters {
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=5g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=6G"
     publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/MarkIlluminaAdapters/"
     
     input:
@@ -133,7 +134,7 @@ process runMarkIlluminaAdapters {
     """
     module load java/1.8.0_66
     
-	java -Xmx5G -jar ${PICARD} MarkIlluminaAdapters \
+	java -Xmx5G -XX:ParallelGCThreads=1 -jar ${PICARD} MarkIlluminaAdapters \
 		I=${ubam} \
 		O=${outfile_bam} \
 		M=${outfile_metrics} \
@@ -154,7 +155,7 @@ process runMarkIlluminaAdapters {
 process runBWA {
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=5g -pe omp 5"
+	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=5G -pe omp 12"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 	
     input:
@@ -172,13 +173,13 @@ process runBWA {
     module load bwa/0.7.12
         
 	set -o pipefail
-	java -Dsamjdk.buffer_size=131072 -Dsamjdk.compression_level=1 -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -Xmx128m -jar ${PICARD} SamToFastq \
+	java -Dsamjdk.buffer_size=131072 -Dsamjdk.compression_level=1 -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10 -XX:ParallelGCThreads=1 -Xmx128m -jar ${PICARD} SamToFastq \
 		I=${ubamxt} \
 		FASTQ=/dev/stdout \
 		CLIPPING_ATTRIBUTE=XT CLIPPING_ACTION=2 INTERLEAVE=true NON_PF=true \
 		TMP_DIR=tmp | \
-	bwa mem -M -t 5 -p ${REF} /dev/stdin | \
-	java -Xmx5G -jar ${PICARD} MergeBamAlignment \
+	bwa mem -M -t 10 -p ${REF} /dev/stdin | \
+	java -XX:ParallelGCThreads=1 -Xmx4G -jar ${PICARD} MergeBamAlignment \
 		ALIGNED_BAM=/dev/stdin \
 		UNMAPPED_BAM=${ubamxt} \
 		OUTPUT=${outfile_bam} \
@@ -190,7 +191,6 @@ process runBWA {
 		PRIMARY_ALIGNMENT_STRATEGY=MostDistant \
 		ATTRIBUTES_TO_RETAIN=XS \
 		TMP_DIR=tmp
-		
 	"""	
 }
 
@@ -220,7 +220,7 @@ runBWAOutput_grouped_by_sample = runBWAOutput.groupTuple(by: [0,1])
 process runMarkDuplicates {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=48:00:00 -l mem_total=30g -pe omp 5"
+	clusterOptions = "-P ${PROJECT} -l h_rt=48:00:00 -l mem_total=94G -pe omp 5"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/MarkDuplicates"
 	
     input:
@@ -237,12 +237,12 @@ process runMarkDuplicates {
     """
     module load java/1.8.0_66
     
-	java -Xmx30G -XX:ParallelGCThreads=5 -Djava.io.tmpdir=tmp/ -jar ${PICARD} MarkDuplicates \
+	java -Xmx25G -XX:ParallelGCThreads=5 -Djava.io.tmpdir=tmp/ -jar ${PICARD} MarkDuplicates \
 		INPUT=${aligned_bam_list.join(" INPUT=")} \
 		OUTPUT=${outfile_bam} \
 		METRICS_FILE=${outfile_metrics} \
 		CREATE_INDEX=true \
-		TMP_DIR=/tmp
+		TMP_DIR=tmp
 	"""  
 }
 
@@ -270,7 +270,7 @@ runMarkDuplicatesOutput_grouped_by_sample = runMarkDuplicatesOutput.groupTuple(b
 process runRealignerTargetCreator {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=48:00:00 -l mem_total=15g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=94G"
     publishDir "${OUTDIR}/${indivID}/Processing/RealignerTargetCreator/"
     
     input:
@@ -298,7 +298,7 @@ process runRealignerTargetCreator {
 process runIndelRealigner {
     tag "${indivID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=25g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=192:00:00 -l mem_total=94G"
 	publishDir "${OUTDIR}/${indivID}/Processing/IndelRealigner/"
 	    
     input:
@@ -342,15 +342,14 @@ runIndelRealignerOutput_split = runIndelRealignerOutput.map { indivID, file -> t
 process runBaseRecalibrator {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=25g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=94G -pe omp 2"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/BaseRecalibrator/"
 	    
     input:
     set indivID, sampleID, realign_bam from runIndelRealignerOutput_split
     
     output:
-    set indivID, sampleID, realign_bam, file(recal_table) into runBaseRecalibratorOutput_for_plotting
- 	set indivID, sampleID, realign_bam, file(recal_table) into runBaseRecalibratorOutput_for_recal
+    set indivID, sampleID, realign_bam, file(recal_table) into runBaseRecalibratorOutput_for_plotting, runBaseRecalibratorOutput_for_recal
     
     script:
     recal_table = sampleID + "_recal_table.txt" 
@@ -358,7 +357,7 @@ process runBaseRecalibrator {
     """
     module load java/1.8.0_66
     
-	java -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
+	java -XX:ParallelGCThreads=2 -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
 		-T BaseRecalibrator \
 		-R ${REF} \
 		-I ${realign_bam} \
@@ -366,7 +365,6 @@ process runBaseRecalibrator {
 		-knownSites ${GOLD2} \
 		-knownSites ${DBSNP} \
 		-o ${recal_table}
-
 	"""
 }
 
@@ -382,14 +380,15 @@ process runBaseRecalibratorPostRecal {
     
     output:
     set indivID, sampleID, recal_table, file(post_recal_table) into runBaseRecalibratorPostRecalOutput
- 
+    set indivID, sampleID, realign_bam into deleteIndelRealigner_2
+    
     script:
     post_recal_table = sampleID + "_post_recal_table.txt" 
        
     """
     module load java/1.8.0_66
     
-	java -Xmx5g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
+	java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
 		-T BaseRecalibrator \
 		-R ${REF} \
 		-I ${realign_bam} \
@@ -405,7 +404,7 @@ process runBaseRecalibratorPostRecal {
 process runAnalyzeCovariates {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=12:00:00 -l mem_total=5g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=12:00:00 -l mem_total=5G"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/AnalyzeCovariates/"
 	    
     input:
@@ -420,7 +419,7 @@ process runAnalyzeCovariates {
     """
     module load java/1.8.0_66
     
-	java -Xmx5g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
+	java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
 		-T AnalyzeCovariates \
 		-R ${REF} \
 		-before ${recal_table} \
@@ -434,7 +433,7 @@ process runAnalyzeCovariates {
 process runPrintReads {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=25g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=25G"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/"
 	    
     input:
@@ -451,7 +450,7 @@ process runPrintReads {
     """
     module load java/1.8.0_66
 
-	java -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
+	java -XX:ParallelGCThreads=1 -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
 		-T PrintReads \
 		-R ${REF} \
 		-I ${realign_bam} \
@@ -474,7 +473,7 @@ process runPrintReads {
 process runDepthOfCoverage {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10G"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/DepthOfCoverage"
 	    
     input:
@@ -489,7 +488,7 @@ process runDepthOfCoverage {
     """
     module load java/1.8.0_66
 
-	java -Djava.io.tmpdir=tmp/ -Xmx10g -jar ${GATK} \
+	java -XX:ParallelGCThreads=1 -Djava.io.tmpdir=tmp/ -Xmx10g -jar ${GATK} \
 		-R ${REF} \
 		-T DepthOfCoverage \
 		-I ${bam} \
@@ -506,7 +505,7 @@ process runDepthOfCoverage {
 process runCollectMultipleMetrics {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10G"
  	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Picard_Metrics"
  	    
     input:
@@ -521,7 +520,7 @@ process runCollectMultipleMetrics {
     """
     module load java/1.8.0_66
 
-	java -Xmx10g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
+	java -XX:ParallelGCThreads=1 -Xmx10g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
 		PROGRAM=MeanQualityByCycle \
 		PROGRAM=QualityScoreDistribution \
 		PROGRAM=CollectAlignmentSummaryMetrics \
@@ -529,8 +528,8 @@ process runCollectMultipleMetrics {
 		INPUT=${bam} \
 		REFERENCE_SEQUENCE=${REF} \
 		ASSUME_SORTED=true \
-		OUTPUT=${prefix}
-		
+		OUTPUT=${prefix} \
+		TMP_DIR=tmp
 	"""
 }	
 
@@ -538,7 +537,7 @@ process runCollectMultipleMetrics {
 process runHybridCaptureMetrics {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10G"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Picard_Metrics"
 	    
     input:
@@ -553,12 +552,13 @@ process runHybridCaptureMetrics {
     """
     module load java/1.8.0_66
 
-	java -Xmx10g -Djava.io.tmpdir=tmp/ -jar $PICARD CalculateHsMetrics \
+	java -XX:ParallelGCThreads=1 -Xmx10g -Djava.io.tmpdir=tmp/ -jar $PICARD CalculateHsMetrics \
 		INPUT=${bam} \
 		OUTPUT=${outfile} \
 		TARGET_INTERVALS=${TARGETS} \
 		BAIT_INTERVALS=${BAITS} \
-		REFERENCE_SEQUENCE=${REF} 	
+		REFERENCE_SEQUENCE=${REF} \
+		TMP_DIR=tmp
 	"""
 }	
 
@@ -566,11 +566,11 @@ process runHybridCaptureMetrics {
 process runFastQC {
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=5g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=5G"
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/FastQC/"
 	    
     input:
-    set indivID, sampleID, libraryID, rgID, platform_unit, platform, run_date, center, fastqR1, fastqR2 from readPairsFastQC
+    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center, fastqR1, fastqR2 from readPairsFastQC
 
     output:
     set file("*.zip"), file("*.html") into FastQCOutput
@@ -595,7 +595,7 @@ process runFastQC {
 process runDeleteBWAInput {
     tag "${indivID}|${sampleID}|${rgID}|${libraryID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00 -l mem_total=1g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
     input:
     set indivID, sampleID, libraryID, rgID, ubam, ubamxt from deleteBWAInput
@@ -609,7 +609,7 @@ process runDeleteBWAInput {
 process runDeleteMarkDuplicatesInput {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00 -l mem_total=1g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
     input:
     set indivID, sampleID, aligned_bam_list from deleteMarkDuplicatesInput
@@ -634,7 +634,7 @@ process runDeleteMarkDuplicatesInput {
 process runDeleteRealignerTargetCreator {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00 -l mem_total=1g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
     input:
     set indivID, dedup_bam_list from deleteRealignerTargetCreatorInput
@@ -656,17 +656,21 @@ process runDeleteRealignerTargetCreator {
     """
 }
 
+
+
+// Need to phase two indepdendent channels so that the file does not get deleted prematurely
+dIR = deleteIndelRealigner_2.phase(deleteIndelRealigner) { [0:2] } 
 process runDeleteIndelRealigner {
-    tag "${indivID}|${sampleID}"
+    tag "${indivID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00 -l mem_total=1g"
+	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
     // Input required from two different branches to ensure that the bam is not
     // deleted until they both are completely finished. The output from
     // AnalyzeCovariates is not used for anything 
     input:
-    set indivID, sampleID, realign_bam_list from deleteIndelRealigner
-	set indivID_2, sampleID_2, recal_table, post_recal_table from runAnalyzeCovariatesOutput
+    set indivID, sampleID, realign_bam_list from dIR
+//	set indivID_2, sampleID_2, realign_bam_2 from deleteIndelRealigner_2
     
     script:
     cl = realign_bam_list.getClass()
