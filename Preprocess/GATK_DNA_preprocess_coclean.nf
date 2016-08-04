@@ -440,7 +440,7 @@ process runPrintReads {
     set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput_for_recal
 
     output:
-    set indivID, sampleID, realign_bam into deleteIndelRealigner
+    set indivID, sampleID, realign_bam into deleteIndelRealigner_1
     set indivID, sampleID, file(outfile_bam), file(outfile_bai) into runPrintReadsOutput_for_DepthOfCoverage, runPrintReadsOutput_for_HC_Metrics, runPrintReadsOutput_for_Multiple_Metrics
         
     script:
@@ -658,8 +658,10 @@ process runDeleteRealignerTargetCreator {
 
 
 
-// Need to phase two indepdendent channels so that the file does not get deleted prematurely
-dIR = deleteIndelRealigner_2.phase(deleteIndelRealigner) { [0:2] } 
+// Need to phase two indepdendent channels so that one channel does not reach this process and
+// delete the file while the other channel is still using it
+deleteIndelRealigner_all = deleteIndelRealigner_1.phase(deleteIndelRealigner_2)
+
 process runDeleteIndelRealigner {
     tag "${indivID}"
     executor = 'sge'
@@ -669,10 +671,10 @@ process runDeleteIndelRealigner {
     // deleted until they both are completely finished. The output from
     // AnalyzeCovariates is not used for anything 
     input:
-    set indivID, sampleID, realign_bam_list from dIR
-//	set indivID_2, sampleID_2, realign_bam_2 from deleteIndelRealigner_2
+    set first, second from deleteIndelRealigner_all
     
     script:
+    realign_bam_list = first[2]
     cl = realign_bam_list.getClass()
     cl_n = cl.getName()
     if(cl_n == "sun.nio.fs.UnixPath") {
