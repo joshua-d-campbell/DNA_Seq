@@ -268,7 +268,7 @@ runMarkDuplicatesOutput_grouped_by_sample = runMarkDuplicatesOutput.groupTuple(b
 //#############################################################################################################
 
 process runRealignerTargetCreator {
-    tag "${indivID}|${sampleID}"
+    tag "${indivID}"
     executor = 'sge'
 	clusterOptions = "-P ${PROJECT} -l h_rt=96:00:00 -l mem_total=94G"
     publishDir "${OUTDIR}/${indivID}/Processing/RealignerTargetCreator/"
@@ -349,7 +349,7 @@ process runBaseRecalibrator {
     set indivID, sampleID, realign_bam from runIndelRealignerOutput_split
     
     output:
-    set indivID, sampleID, realign_bam, file(recal_table) into runBaseRecalibratorOutput_for_plotting, runBaseRecalibratorOutput_for_recal
+    set indivID, sampleID, realign_bam, file(recal_table) into runBaseRecalibratorOutput
     
     script:
     recal_table = sampleID + "_recal_table.txt" 
@@ -376,11 +376,11 @@ process runBaseRecalibratorPostRecal {
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/BaseRecalibratorPostRecal/"
 	    
     input:
-    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput_for_plotting
+    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput
     
     output:
-    set indivID, sampleID, recal_table, file(post_recal_table) into runBaseRecalibratorPostRecalOutput
-    set indivID, sampleID, realign_bam into deleteIndelRealigner_2
+    set indivID, sampleID, recal_table, file(post_recal_table) into runBaseRecalibratorPostRecalOutput_Analyze
+    set indivID, sampleID, realign_bam, recal_table into runBaseRecalibratorPostRecalOutput_Print
     
     script:
     post_recal_table = sampleID + "_post_recal_table.txt" 
@@ -408,7 +408,7 @@ process runAnalyzeCovariates {
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/AnalyzeCovariates/"
 	    
     input:
-    set indivID, sampleID, recal_table, post_recal_table from runBaseRecalibratorPostRecalOutput
+    set indivID, sampleID, recal_table, post_recal_table from runBaseRecalibratorPostRecalOutput_Analyze
 
 	output:
 	set indivID, sampleID, recal_plots into runAnalyzeCovariatesOutput
@@ -437,10 +437,10 @@ process runPrintReads {
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/"
 	    
     input:
-    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput_for_recal
+    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorPostRecalOutput_Print
 
     output:
-    set indivID, sampleID, realign_bam into deleteIndelRealigner_1
+    set indivID, sampleID, realign_bam into deleteIndelRealigner
     set indivID, sampleID, file(outfile_bam), file(outfile_bai) into runPrintReadsOutput_for_DepthOfCoverage, runPrintReadsOutput_for_HC_Metrics, runPrintReadsOutput_for_Multiple_Metrics
         
     script:
@@ -632,7 +632,7 @@ process runDeleteMarkDuplicatesInput {
 }
 
 process runDeleteRealignerTargetCreator {
-    tag "${indivID}|${sampleID}"
+    tag "${indivID}"
     executor = 'sge'
 	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
@@ -658,12 +658,8 @@ process runDeleteRealignerTargetCreator {
 
 
 
-// Need to phase two indepdendent channels so that one channel does not reach this process and
-// delete the file while the other channel is still using it
-deleteIndelRealigner_all = deleteIndelRealigner_1.phase(deleteIndelRealigner_2)
-
 process runDeleteIndelRealigner {
-    tag "${indivID}"
+    tag "${indivID}|${sampleID}"
     executor = 'sge'
 	clusterOptions = "-P ${PROJECT} -l h_rt=1:00:00"
     
@@ -671,10 +667,9 @@ process runDeleteIndelRealigner {
     // deleted until they both are completely finished. The output from
     // AnalyzeCovariates is not used for anything 
     input:
-    set first, second from deleteIndelRealigner_all
+    set indivID, sampleID, realign_bam_list from deleteIndelRealigner
     
     script:
-    realign_bam_list = first[2]
     cl = realign_bam_list.getClass()
     cl_n = cl.getName()
     if(cl_n == "sun.nio.fs.UnixPath") {
