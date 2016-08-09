@@ -368,6 +368,34 @@ process runBaseRecalibrator {
 	"""
 }
 
+process runPrintReads {
+    tag "${indivID}|${sampleID}"
+    executor = 'sge'
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=25G"
+	publishDir "${OUTDIR}/${indivID}/${sampleID}/"
+	    
+    input:
+    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput 
+
+    output:
+    set indivID, sampleID, file(outfile_bam), file(outfile_bai) into runPrintReadsOutput_for_DepthOfCoverage, runPrintReadsOutput_for_HC_Metrics, runPrintReadsOutput_for_Multiple_Metrics
+    set indivID, sampleID, realign_bam, recal_table from runPrintReadsOutput_for_PostRecal
+            
+    script:
+    outfile_bam = sampleID + ".clean.bam"
+    outfile_bai = sampleID + ".clean.bai"
+           
+    """
+    module load java/1.8.0_66
+
+	java -XX:ParallelGCThreads=1 -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
+		-T PrintReads \
+		-R ${REF} \
+		-I ${realign_bam} \
+		-BQSR ${recal_table} \
+		-o ${outfile_bam}
+    """
+}    
 
 process runBaseRecalibratorPostRecal {
     tag "${indivID}|${sampleID}"
@@ -376,12 +404,12 @@ process runBaseRecalibratorPostRecal {
 	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/BaseRecalibratorPostRecal/"
 	    
     input:
-    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput
+    set indivID, sampleID, realign_bam, recal_table from runPrintReadsOutput_for_PostRecal
     
     output:
     set indivID, sampleID, recal_table, file(post_recal_table) into runBaseRecalibratorPostRecalOutput_Analyze
-    set indivID, sampleID, realign_bam, recal_table into runBaseRecalibratorPostRecalOutput_Print
-    
+    set indivID, sampleID, realign_bam into deleteIndelRealigner
+        
     script:
     post_recal_table = sampleID + "_post_recal_table.txt" 
        
@@ -397,7 +425,6 @@ process runBaseRecalibratorPostRecal {
 		-knownSites ${DBSNP} \
 		-BQSR ${recal_table} \
 		-o ${post_recal_table}
-
 	"""
 }	
 
@@ -425,39 +452,11 @@ process runAnalyzeCovariates {
 		-before ${recal_table} \
 		-after ${post_recal_table} \
 		-plots ${recal_plots}
-
     """
 }    
 
 
-process runPrintReads {
-    tag "${indivID}|${sampleID}"
-    executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=25G"
-	publishDir "${OUTDIR}/${indivID}/${sampleID}/"
-	    
-    input:
-    set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorPostRecalOutput_Print
 
-    output:
-    set indivID, sampleID, realign_bam into deleteIndelRealigner
-    set indivID, sampleID, file(outfile_bam), file(outfile_bai) into runPrintReadsOutput_for_DepthOfCoverage, runPrintReadsOutput_for_HC_Metrics, runPrintReadsOutput_for_Multiple_Metrics
-        
-    script:
-    outfile_bam = sampleID + ".clean.bam"
-    outfile_bai = sampleID + ".clean.bai"
-           
-    """
-    module load java/1.8.0_66
-
-	java -XX:ParallelGCThreads=1 -Xmx25g -Djava.io.tmpdir=tmp/ -jar ${GATK} \
-		-T PrintReads \
-		-R ${REF} \
-		-I ${realign_bam} \
-		-BQSR ${recal_table} \
-		-o ${outfile_bam}
-    """
-}    
 
 
 //#############################################################################################################
