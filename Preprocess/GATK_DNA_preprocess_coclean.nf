@@ -379,7 +379,7 @@ process runPrintReads {
 
     output:
     set indivID, sampleID, file(outfile_bam), file(outfile_bai) into runPrintReadsOutput_for_DepthOfCoverage, runPrintReadsOutput_for_HC_Metrics, runPrintReadsOutput_for_Multiple_Metrics
-    set indivID, sampleID, realign_bam, recal_table from runPrintReadsOutput_for_PostRecal
+    set indivID, sampleID, realign_bam, recal_table into runPrintReadsOutput_for_PostRecal
             
     script:
     outfile_bam = sampleID + ".clean.bam"
