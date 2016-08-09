@@ -505,7 +505,7 @@ process runDepthOfCoverage {
 process runCollectMultipleMetrics {
     tag "${indivID}|${sampleID}"
     executor = 'sge'
-	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=10G"
+	clusterOptions = "-P ${PROJECT} -l h_rt=24:00:00 -l mem_total=25G"
  	publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Picard_Metrics"
  	    
     input:
@@ -520,7 +520,7 @@ process runCollectMultipleMetrics {
     """
     module load java/1.8.0_66
 
-	java -XX:ParallelGCThreads=1 -Xmx10g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
+	java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
 		PROGRAM=MeanQualityByCycle \
 		PROGRAM=QualityScoreDistribution \
 		PROGRAM=CollectAlignmentSummaryMetrics \
